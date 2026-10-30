@@ -35,6 +35,7 @@ class Project(BaseModel):
     source: Literal["youtube", "upload"] = "upload"
     source_url: Optional[str] = None
     quality: int = config.DEFAULT_QUALITY  # requested max height for YouTube downloads
+    light_download: bool = False  # prefer smaller streams (<=30 fps, VP9): faster on a slow connection
     status: ProjectStatus = "queued"
     progress: float = 0.0
     message: str = ""
@@ -59,6 +60,7 @@ class Project(BaseModel):
 class UrlRequest(BaseModel):
     url: str
     quality: int = config.DEFAULT_QUALITY
+    light: bool = False
 
     @field_validator("url")
     @classmethod

@@ -203,3 +203,13 @@ def test_cancel_returns_waiting_exports_to_idle_and_spares_finished_ones(client,
     res = client.post(f"/api/projects/{ready_project}/exports/cancel", json={})
     statuses = [c["export_status"] for c in res.json()["clips"]]
     assert statuses == ["idle", "done"]
+
+
+def test_light_download_is_remembered_on_the_project(client):
+    res = client.post("/api/projects/from-url", json={"url": "https://youtu.be/x", "light": True})
+    assert res.status_code == 201 and res.json()["light_download"] is True
+
+
+def test_light_download_is_off_by_default(client):
+    res = client.post("/api/projects/from-url", json={"url": "https://youtu.be/x"})
+    assert res.json()["light_download"] is False

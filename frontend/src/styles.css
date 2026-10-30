@@ -212,3 +212,9 @@ input[type="checkbox"] { appearance: auto; width: 16px; height: 16px; min-width:
 .select-all { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
 .export-row .ghost { margin-left: auto; padding: 2px 8px; font-size: 13px; }
 @media (max-width: 640px) { .source-info { display: none; } }
+
+/* ---------- lighter download toggle ---------- */
+.light-toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-2); cursor: pointer; margin-top: -6px; }
+
+/* ---------- live progress sentence (download speed, time left) ---------- */
+.progress-text { margin: 0; font-size: 16px; color: var(--ink); font-variant-numeric: tabular-nums; text-wrap: balance; }

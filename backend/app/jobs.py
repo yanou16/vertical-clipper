@@ -27,15 +27,16 @@ _cancel_lock = threading.Lock()
 _cancelled: set[tuple[str, str]] = set()  # (project_id, clip_id) of exports the user asked to stop
 
 
-def _throttled(update: Callable[[float], None], every: float = 0.5) -> Callable[[float], None]:
-    """Wrap a progress callback so we don't rewrite project.json hundreds of times per second."""
+def _throttled(update: Callable[..., None], every: float = 0.5) -> Callable[..., None]:
+    """Wrap a progress callback so we don't rewrite project.json hundreds of times per second.
+    Extra arguments (like a text description) are passed through to `update`."""
     last = [0.0]
 
-    def inner(value: float) -> None:
+    def inner(value: float, *rest) -> None:
         now = time.monotonic()
         if value >= 1.0 or now - last[0] >= every:
             last[0] = now
-            update(value)
+            update(value, *rest)
     return inner
 
 
@@ -78,7 +79,8 @@ def _run_pipeline(project_id: str, youtube_url: Optional[str]) -> None:
                 _set(project_id, status="downloading", progress=0.0, message="Downloading the video...")
                 source, title = ingest.download_youtube(
                     youtube_url, folder, project.quality,
-                    _throttled(lambda v: _set(project_id, progress=v)),
+                    _throttled(lambda v, text: _set(project_id, progress=v, message=text)),
+                    light=project.light_download,
                 )
                 _set(project_id, title=title)
         elif source is None:

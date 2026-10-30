@@ -62,6 +62,13 @@ A vertical clip only uses a slice of the picture (608×1080 pixels out of a 1080
 - Higher quality means a bigger download and slower exports. Measured on a 16 s test video: the 4K stream is 22 MB
   (11.7 Mb/s) against 3.5 MB at 1080p, and the clip exports in 6.6 s against 4.6 s. A 1-hour 4K video is several GB,
   so on a slow connection (mine ran at roughly 150-350 KB/s) it can take hours: start with 1080p or 1440p.
+- **Lighter download** (checkbox under the link): same height cap, but it prefers 30 fps or less and the VP9 codec,
+  which gives much smaller files. On a 10-minute 720p video the normal pick (50 fps H.264) is 210 MB, while the lighter
+  one would be about 75 MB (sizes from YouTube's own format list; I ran the lighter mode end to end only on a short test
+  video). Little is lost for talking-head content; fast sport will look a bit less smooth.
+- **Where the time goes**, measured on that 10-minute video over a slow connection (about 100-300 KB/s): download
+  16 min 56 s (92 % of the wait), 480p preview 1 min 21 s, analysis 11 s. The progress screen shows the percentage,
+  the size, the speed and the time left while downloading.
 - YouTube hides some formats behind a small JavaScript puzzle. The tool installs `yt-dlp-ejs` (from the yt-dlp
   project) and uses whichever JavaScript runtime you have (deno, node or bun).
 

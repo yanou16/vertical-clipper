@@ -35,8 +35,8 @@ export const api = {
   listProjects: () => request<Project[]>("/api/projects"),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
   deleteProject: (id: string) => request<void>(`/api/projects/${id}`, { method: "DELETE" }),
-  createFromUrl: (url: string, quality: number) =>
-    request<Project>("/api/projects/from-url", json("POST", { url, quality })),
+  createFromUrl: (url: string, quality: number, light: boolean) =>
+    request<Project>("/api/projects/from-url", json("POST", { url, quality, light })),
   retry: (id: string) => request<Project>(`/api/projects/${id}/retry`, { method: "POST" }),
 
   /** XHR instead of fetch because fetch can't report upload progress. */

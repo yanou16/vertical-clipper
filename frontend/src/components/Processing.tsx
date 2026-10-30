@@ -49,9 +49,8 @@ export function Processing({ project, onBack, onRetry }: Props) {
   return (
     <main className="center-card card">
       <h2>{project.title === "Downloading..." ? "Working on your video" : project.title}</h2>
-      <p className="muted">
-        {project.message || "This can take a few minutes for long videos."} You can leave this page open.
-      </p>
+      <p className="progress-text">{project.message || "This can take a few minutes for long videos."}</p>
+      <p className="muted small">You can leave this page open.</p>
       <ol className="steps">
         {STEPS.map((step, i) => (
           <li key={step.status} className={i < current ? "done" : i === current ? "active" : ""}>

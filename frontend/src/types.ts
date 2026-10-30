@@ -22,6 +22,7 @@ export interface Project {
   source: "youtube" | "upload";
   source_url: string | null;
   quality: number;
+  light_download: boolean;
   status: ProjectStatus;
   progress: number;
   message: string;

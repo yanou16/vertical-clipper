@@ -26,9 +26,20 @@ function savedQuality(): number {
   return 1440;
 }
 
+const LIGHT_KEY = "clipper.light";
+
+function savedLight(): boolean {
+  try {
+    return localStorage.getItem(LIGHT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function Home({ onOpen }: Props) {
   const [url, setUrl] = useState("");
   const [quality, setQuality] = useState(savedQuality);
+  const [light, setLight] = useState(savedLight);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
@@ -49,10 +60,11 @@ export function Home({ onOpen }: Props) {
     try {
       try {
         localStorage.setItem(QUALITY_KEY, String(quality));
+        localStorage.setItem(LIGHT_KEY, light ? "1" : "0");
       } catch {
         /* not essential */
       }
-      onOpen((await api.createFromUrl(url.trim(), quality)).id);
+      onOpen((await api.createFromUrl(url.trim(), quality, light)).id);
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -122,6 +134,10 @@ export function Home({ onOpen }: Props) {
           Create clips
         </button>
       </form>
+      <label className="light-toggle">
+        <input type="checkbox" checked={light} onChange={(e) => setLight(e.target.checked)} disabled={busy} />
+        Lighter download (30 fps, smaller files). Faster on a slow connection.
+      </label>
       <p className="quality-hint muted small">
         Vertical clips use a slice of the picture, so a higher-resolution download gives cleaner, more detailed clips.
         Higher quality means a bigger download and slower exports.

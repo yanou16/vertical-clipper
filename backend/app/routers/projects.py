@@ -79,7 +79,9 @@ def list_projects():
 @router.post("/projects/from-url", response_model=Project, status_code=201)
 def create_from_url(body: UrlRequest):
     project = store.create("Downloading...", "youtube", body.url)
-    project = store.update(project.id, lambda p: setattr(p, "quality", body.quality))
+    def choose(p: Project) -> None:
+        p.quality, p.light_download = body.quality, body.light
+    project = store.update(project.id, choose)
     jobs.submit_pipeline(project.id, youtube_url=body.url)
     return project
 
