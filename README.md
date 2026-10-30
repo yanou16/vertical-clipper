@@ -20,14 +20,16 @@ You need **FFmpeg**, **Python 3.10+** and **Node.js 18+** (Node is only used onc
 The script installs everything else, starts the app and opens <http://localhost:8000>.
 First launch takes about a minute; the next ones are instant. Press `Ctrl+C` to stop.
 
-**Prefer Docker?** Nothing else to install. (`start.sh` is the path I tested end to end; the Docker image is provided
-as an alternative and I have not yet completed a successful build of it. Please report any issue.)
+**Prefer Docker?** Nothing else to install:
 
 ```bash
 docker compose up --build
 ```
 
-then open <http://localhost:8000>. Projects and exports are kept in `./data`.
+then open <http://localhost:8000> (`CLIPPER_PORT=8001 docker compose up --build` to use another port). Projects and
+exports are kept in a Docker volume, so they survive restarts; `docker compose down -v` deletes them.
+Tested on macOS (Docker Desktop, Apple silicon): the image builds, a YouTube link downloaded at 4K is analysed and
+exported, an uploaded file works, and data survives a restart. I have not run it on Linux or Windows.
 
 ## How to use it
 
@@ -53,8 +55,13 @@ A vertical clip only uses a slice of the picture (608×1080 pixels out of a 1080
   stream with the **highest bitrate** up to that height. (yt-dlp's default favours the newest codec even when it is the
   most compressed one: on a test video it picked AV1 at 498 kb/s over H.264 at 1,022 kb/s at the same 1080p.)
 - The editor shows what the original really is (resolution, codec, bitrate) and by how much the clips are enlarged.
-  A 4K source is *reduced* to 1080×1920 instead of enlarged, which is why it looks the sharpest.
-- Higher quality means a bigger download and slower exports: a 1-hour 4K video is several GB.
+  A 4K source is *reduced* to 1080×1920 instead of enlarged. On a 16-second 4K test video this gave a visibly
+  **cleaner** picture (no enlargement halos around bright details, finer lines), not a dramatically sharper one:
+  how much you gain depends on the content. A plain "sharpness" metric even scored the enlarged 1080p version
+  higher, because enlarging adds edge artefacts that the metric counts as detail, so judge by eye.
+- Higher quality means a bigger download and slower exports. Measured on a 16 s test video: the 4K stream is 22 MB
+  (11.7 Mb/s) against 3.5 MB at 1080p, and the clip exports in 6.6 s against 4.6 s. A 1-hour 4K video is several GB,
+  so on a slow connection (mine ran at roughly 150-350 KB/s) it can take hours: start with 1080p or 1440p.
 - YouTube hides some formats behind a small JavaScript puzzle. The tool installs `yt-dlp-ejs` (from the yt-dlp
   project) and uses whichever JavaScript runtime you have (deno, node or bun).
 

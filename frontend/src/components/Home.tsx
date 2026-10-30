@@ -6,10 +6,10 @@ interface Props {
   onOpen: (id: string) => void;
 }
 
-// Maximum height we ask YouTube for. A 9:16 clip only uses a slice of the width, so a sharper source
-// gives a visibly sharper clip. Keep in sync with QUALITY_CHOICES in backend/app/config.py.
+// Maximum height we ask YouTube for. A 9:16 clip only uses a slice of the width, so a higher-resolution
+// source is enlarged less and gives a cleaner clip. Keep in sync with QUALITY_CHOICES in backend/app/config.py.
 const QUALITIES = [
-  { value: 2160, label: "4K (sharpest)" },
+  { value: 2160, label: "4K (most detail, large)" },
   { value: 1440, label: "1440p (recommended)" },
   { value: 1080, label: "1080p" },
   { value: 720, label: "720p (fastest)" },
@@ -123,8 +123,8 @@ export function Home({ onOpen }: Props) {
         </button>
       </form>
       <p className="quality-hint muted small">
-        Vertical clips use a slice of the picture, so a sharper download gives sharper clips. Higher quality means a
-        bigger download and slower exports.
+        Vertical clips use a slice of the picture, so a higher-resolution download gives cleaner, more detailed clips.
+        Higher quality means a bigger download and slower exports.
       </p>
 
       <div className="or">or</div>

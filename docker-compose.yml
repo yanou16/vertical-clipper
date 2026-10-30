@@ -2,7 +2,13 @@ services:
   clipper:
     build: .
     ports:
-      - "127.0.0.1:8000:8000"   # reachable from this computer only
+      # Reachable from this computer only. Set CLIPPER_PORT to use another port than 8000.
+      - "127.0.0.1:${CLIPPER_PORT:-8000}:8000"
     volumes:
-      - ./data:/app/data        # keep projects and exports between restarts
+      # A named volume (not ./data): Docker gives it the right owner, so the app (which runs as a
+      # normal user, not root) can always write to it, on macOS, Windows and Linux alike.
+      - clipper-data:/app/data
     restart: unless-stopped
+
+volumes:
+  clipper-data:

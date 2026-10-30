@@ -147,8 +147,8 @@ export function Editor({ project, setProject, refresh, onBack }: Props) {
         <p className="sharpness-hint small">
           Sharpness: this source is {project.height}p, so vertical clips are enlarged ×{enlargement.toFixed(1)}.{" "}
           {project.source === "youtube"
-            ? "Create the project again with a higher quality (1440p or 4K) for sharper clips."
-            : "A higher-resolution file gives sharper clips."}
+            ? "Create the project again with a higher quality (1440p or 4K) for cleaner, more detailed clips."
+            : "A higher-resolution file gives cleaner, more detailed clips."}
         </p>
       )}
 
