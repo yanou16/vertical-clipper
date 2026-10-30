@@ -1,16 +1,24 @@
 """FastAPI entry point. Also serves the built React app so the whole tool is one process."""
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config
+from . import config, jobs
 from .routers import projects
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-app = FastAPI(title="Vertical Clipper", docs_url="/api/docs", openapi_url="/api/openapi.json")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    jobs.recover_interrupted()  # resume work that a previous run (or crash) left half-done
+    yield
+
+
+app = FastAPI(title="Vertical Clipper", docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
 app.include_router(projects.router)
 
 config.PROJECTS_DIR.mkdir(parents=True, exist_ok=True)

@@ -47,9 +47,19 @@ def _validated_range(start: float, end: float, duration: float) -> tuple[float, 
     return round(start, 2), round(end, 2)
 
 
+def _clean_keyframes(raw: list[tuple[float, float]], duration: float) -> list[tuple[float, float]]:
+    """Validate manual framing points: inside the video, inside the frame, one per 10 ms, sorted."""
+    cleaned: dict[float, float] = {}
+    for t, cx in raw:
+        if not (0 <= t <= duration) or not (0 <= cx <= 1):  # also rejects NaN
+            raise HTTPException(422, "Framing points must be inside the video and the frame.")
+        cleaned[round(t, 2)] = round(cx, 4)
+    return sorted(cleaned.items())
+
+
 def _is_current(clip: Clip) -> bool:
-    """True when the exported file matches the clip's current boundaries."""
-    return clip.export_status == "done" and clip.exported_range == (clip.start, clip.end)
+    """True when the exported file reflects the clip as it is now (same range and same framing)."""
+    return clip.export_status == "done" and clip.exported_revision == clip.revision
 
 
 # ---- projects ------------------------------------------------------------------
@@ -69,6 +79,7 @@ def list_projects():
 @router.post("/projects/from-url", response_model=Project, status_code=201)
 def create_from_url(body: UrlRequest):
     project = store.create("Downloading...", "youtube", body.url)
+    project = store.update(project.id, lambda p: setattr(p, "quality", body.quality))
     jobs.submit_pipeline(project.id, youtube_url=body.url)
     return project
 
@@ -108,6 +119,26 @@ def delete_project(project_id: str):
     store.delete(project_id)
 
 
+@router.post("/projects/{project_id}/retry", response_model=Project)
+def retry_project(project_id: str):
+    project = _get_project(project_id)
+    if project.status != "error":
+        raise HTTPException(409, "Only a failed video can be retried.")
+    return jobs.retry(project_id)
+
+
+@router.get("/projects/{project_id}/faces")
+def faces_in_range(project_id: str, start: float = 0.0, end: float = 0.0):
+    """Faces seen between `start` and `end` seconds, so the editor can offer 'click a face to follow it'."""
+    _get_project(project_id)
+    if not (0 <= end - start <= config.CLIP_MAX_LEN + 5):
+        raise HTTPException(422, "Ask for one clip at a time.")
+    lo, hi = start - 0.5, end + 0.5
+    data = store.read_json(project_id, "faces.json") or []  # projects made before this feature have none
+    return [{"t": t, "faces": [{"cx": f[0], "cy": f[1], "w": f[2], "h": f[3]} for f in faces]}
+            for t, faces in data if lo <= t <= hi]
+
+
 @router.get("/projects/{project_id}/media")
 def preview_media(project_id: str):
     """Low-res preview of the source for the editor (supports HTTP range requests for seeking)."""
@@ -138,12 +169,19 @@ def patch_clip(project_id: str, clip_id: str, body: ClipPatch):
     start = clip.start if body.start is None else body.start
     end = clip.end if body.end is None else body.end
     start, end = _validated_range(start, end, project.duration)
+    keyframes = None if body.keyframes is None else _clean_keyframes(body.keyframes, project.duration)
 
     def mutate(p: Project) -> None:
         c = _find_clip(p, clip_id)
+        changed = (c.start, c.end) != (start, end)
         c.start, c.end = start, end
+        if keyframes is not None:
+            changed = changed or [tuple(k) for k in c.keyframes] != keyframes
+            c.keyframes = keyframes
         if body.title is not None:
             c.title = body.title.strip()
+        if changed:
+            c.revision += 1  # whatever was exported before is now out of date
         if c.export_status in ("done", "error") and not _is_current(c):
             c.export_status, c.export_progress, c.export_error = "idle", 0.0, None
     return store.update(project_id, mutate)
@@ -182,6 +220,13 @@ def start_exports(project_id: str, body: ExportRequest):
     if todo:
         jobs.submit_exports(project_id, todo)
     return store.get(project_id)
+
+
+@router.post("/projects/{project_id}/exports/cancel", response_model=Project)
+def cancel_exports(project_id: str, body: ExportRequest):
+    project = _get_ready_project(project_id)
+    wanted = body.clip_ids if body.clip_ids is not None else [c.id for c in project.clips]
+    return jobs.cancel_exports(project_id, wanted)
 
 
 @router.get("/projects/{project_id}/clips/{clip_id}/download")

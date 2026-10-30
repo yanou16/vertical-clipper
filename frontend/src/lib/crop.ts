@@ -3,6 +3,17 @@ export function cropWidthFraction(width: number, height: number): number {
   return Math.min(1, (height * 9) / 16 / width);
 }
 
+/**
+ * The camera path made from a clip's manual framing points. Mirrors the server's `effective_path`:
+ * the window is kept inside the frame, and before/after the points the camera holds still.
+ */
+export function framingPath(keyframes: [number, number][], cropFrac: number): [number, number][] {
+  const half = cropFrac / 2;
+  return [...keyframes]
+    .sort((a, b) => a[0] - b[0])
+    .map(([t, c]): [number, number] => [t, Math.min(Math.max(c, half), 1 - half)]);
+}
+
 /** Camera centre (0..1) at time t. Mirrors the server's np.interp over the same path. */
 export function centerAt(path: [number, number][], t: number): number {
   if (path.length === 0) return 0.5;

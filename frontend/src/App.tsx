@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api } from "./api";
 import { Editor } from "./components/Editor";
 import { Home } from "./components/Home";
 import { Processing } from "./components/Processing";
@@ -33,7 +34,9 @@ function ProjectPage({ id }: { id: string }) {
     );
   }
   if (!project) return <main className="center-card muted">Loading…</main>;
-  if (project.status !== "ready") return <Processing project={project} onBack={home} />;
+  if (project.status !== "ready") {
+    return <Processing project={project} onBack={home} onRetry={async () => setProject(await api.retry(id))} />;
+  }
   return <Editor key={project.id} project={project} setProject={setProject} refresh={refresh} onBack={home} />;
 }
 

@@ -1,4 +1,4 @@
-import type { Project } from "./types";
+import type { FaceSample, Project } from "./types";
 
 const SERVER_DOWN =
   "Can't reach the Vertical Clipper server. Make sure it is still running (start.sh / start.bat), then try again.";
@@ -35,7 +35,9 @@ export const api = {
   listProjects: () => request<Project[]>("/api/projects"),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
   deleteProject: (id: string) => request<void>(`/api/projects/${id}`, { method: "DELETE" }),
-  createFromUrl: (url: string) => request<Project>("/api/projects/from-url", json("POST", { url })),
+  createFromUrl: (url: string, quality: number) =>
+    request<Project>("/api/projects/from-url", json("POST", { url, quality })),
+  retry: (id: string) => request<Project>(`/api/projects/${id}/retry`, { method: "POST" }),
 
   /** XHR instead of fetch because fetch can't report upload progress. */
   uploadFile(file: File, onProgress: (fraction: number) => void): Promise<Project> {
@@ -60,7 +62,13 @@ export const api = {
     });
   },
 
-  patchClip: (id: string, clipId: string, patch: { start?: number; end?: number; title?: string }) =>
+  getFaces: (id: string, start: number, end: number) =>
+    request<FaceSample[]>(`/api/projects/${id}/faces?start=${start}&end=${end}`),
+  patchClip: (
+    id: string,
+    clipId: string,
+    patch: { start?: number; end?: number; title?: string; keyframes?: [number, number][] },
+  ) =>
     request<Project>(`/api/projects/${id}/clips/${clipId}`, json("PATCH", patch)),
   addClip: (id: string, start: number, end: number) =>
     request<Project>(`/api/projects/${id}/clips`, json("POST", { start, end })),
@@ -73,6 +81,8 @@ export const api = {
     ),
   startExports: (id: string, clipIds: string[] | null) =>
     request<Project>(`/api/projects/${id}/exports`, json("POST", { clip_ids: clipIds })),
+  cancelExports: (id: string, clipIds: string[] | null) =>
+    request<Project>(`/api/projects/${id}/exports/cancel`, json("POST", { clip_ids: clipIds })),
 
   mediaUrl: (id: string) => `/api/projects/${id}/media`,
   clipDownloadUrl: (id: string, clipId: string) => `/api/projects/${id}/clips/${clipId}/download`,

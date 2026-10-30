@@ -19,6 +19,8 @@ class VideoInfo:
     height: int
     fps: float
     has_audio: bool
+    codec: str = ""
+    bitrate: int = 0  # video bits per second, 0 when unknown
 
 
 def require_binaries() -> None:
@@ -56,7 +58,16 @@ def probe(path: Path) -> VideoInfo:
         height=int(video["height"]),
         fps=fps,
         has_audio=any(s.get("codec_type") == "audio" for s in data["streams"]),
+        codec=video.get("codec_name", ""),
+        bitrate=_to_int(video.get("bit_rate")) or _to_int(data.get("format", {}).get("bit_rate")),
     )
+
+
+def _to_int(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def run_with_progress(cmd: list[str], duration: float, on_progress: Callable[[float], None]) -> None:

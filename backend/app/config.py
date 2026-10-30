@@ -15,6 +15,11 @@ MAX_UPLOAD_MB = int(os.environ.get("CLIPPER_MAX_UPLOAD_MB", "4096"))
 MAX_VIDEO_MINUTES = int(os.environ.get("CLIPPER_MAX_VIDEO_MINUTES", "180"))
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
 
+# YouTube download quality = maximum video height we are willing to fetch.
+# A 9:16 crop only uses a slice of the width, so a sharper source gives a visibly sharper clip.
+QUALITY_CHOICES = (720, 1080, 1440, 2160)
+DEFAULT_QUALITY = 1440
+
 # Output format.
 OUT_WIDTH, OUT_HEIGHT = 1080, 1920
 
@@ -32,3 +37,7 @@ CLIP_MIN_LEN = 1.0
 CLIP_MAX_LEN = 180.0
 
 WORKER_THREADS = int(os.environ.get("CLIPPER_WORKERS", "2"))
+
+# A video interrupted by a server restart is resumed automatically this many times, then marked as failed
+# (protects against a video that crashes the server over and over).
+MAX_RECOVERY_ATTEMPTS = 2

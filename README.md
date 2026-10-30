@@ -44,6 +44,36 @@ then open <http://localhost:8000>. Projects and exports are kept in `./data`.
 
 Output: `1080×1920`, H.264 + AAC, MP4 (plays everywhere, ready to upload).
 
+### Sharper clips: download quality
+
+A vertical clip only uses a slice of the picture (608×1080 pixels out of a 1080p frame) that is then enlarged to
+1080×1920, so the **source resolution matters a lot**.
+
+- Pick the quality next to the YouTube link: 4K, 1440p (default), 1080p or 720p. For each choice the tool takes the
+  stream with the **highest bitrate** up to that height. (yt-dlp's default favours the newest codec even when it is the
+  most compressed one: on a test video it picked AV1 at 498 kb/s over H.264 at 1,022 kb/s at the same 1080p.)
+- The editor shows what the original really is (resolution, codec, bitrate) and by how much the clips are enlarged.
+  A 4K source is *reduced* to 1080×1920 instead of enlarged, which is why it looks the sharpest.
+- Higher quality means a bigger download and slower exports: a 1-hour 4K video is several GB.
+- YouTube hides some formats behind a small JavaScript puzzle. The tool installs `yt-dlp-ejs` (from the yt-dlp
+  project) and uses whichever JavaScript runtime you have (deno, node or bun).
+
+### Frame a clip yourself
+
+The automatic camera follows the main face. To override it for one clip:
+
+- **drag the orange frame** on the wide preview to where you want it, or **pause and click a face** to follow it from
+  that moment on;
+- each placement is a *framing point* (a diamond on the timeline); the camera glides between points. One point holds the
+  frame still for the whole clip. **Back to automatic** removes them.
+
+### Long jobs are safe to interrupt
+
+- If the server stops or crashes while a video is processing or exporting, the work **resumes automatically** on the
+  next start (a video that keeps crashing it is marked as failed after two attempts).
+- A failed video has a **Try again** button; a finished download is reused, not downloaded twice.
+- Exports can be **cancelled** one by one or all at once, and you can tick several clips and **export just those**.
+
 ## How it works
 
 ```
@@ -116,8 +146,8 @@ Settings (environment variables): `CLIPPER_DATA_DIR`, `CLIPPER_MAX_UPLOAD_MB` (d
 
 ## Limits & what I'd do next
 
-- Tracks one main subject. Next step: two-person interviews (split-screen or switching to whoever speaks, using
-  audio activity) and a manual "pin the crop here" override per clip.
+- Tracks one main subject automatically; with several people you pick who to follow by hand. Next step: switch
+  automatically to whoever speaks (using audio activity) or a split-screen layout for two-person interviews.
 - Segmentation is audio/visual only. Next step: transcribe with an open-source model (Whisper) to cut on sentence
   boundaries and pick the most engaging segments; burn in captions.
 - The server is built for **one user on a local machine** and binds to `127.0.0.1` with no login. To put it online it

@@ -18,9 +18,14 @@ from .media import MediaError, VideoInfo
 from .tracking import centers_at
 
 
+class ExportCancelled(Exception):
+    """Raised when the user cancels an export while it is rendering."""
+
+
 def render_clip(source: Path, info: VideoInfo, crop_path: list[list[float]],
                 start: float, end: float, out_file: Path,
-                on_progress: Callable[[float], None]) -> None:
+                on_progress: Callable[[float], None],
+                cancelled: Callable[[], bool] = lambda: False) -> None:
     width, height, fps = info.width, info.height, min(info.fps, 60.0)
     duration = end - start
     crop_w = min(width, int(round(height * 9 / 16 / 2)) * 2)
@@ -28,6 +33,8 @@ def render_clip(source: Path, info: VideoInfo, crop_path: list[list[float]],
     total_frames = max(1, int(round(duration * fps)))
     # Camera centre for every output frame, computed once up front.
     centers = centers_at(crop_path, start + np.arange(total_frames + 2) / fps)
+    # Shrinking keeps detail (area averaging); enlarging is where Lanczos looks sharpest.
+    interp = cv2.INTER_AREA if height >= config.OUT_HEIGHT else cv2.INTER_LANCZOS4
 
     decoder = subprocess.Popen(
         ["ffmpeg", "-v", "error", "-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(source),
@@ -35,7 +42,7 @@ def render_clip(source: Path, info: VideoInfo, crop_path: list[list[float]],
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
     )
     part = out_file.with_suffix(".part.mp4")
-    audio_map = ["-map", "1:a:0?", "-c:a", "aac", "-b:a", "160k"] if info.has_audio else ["-an"]
+    audio_map = ["-map", "1:a:0?", "-c:a", "aac", "-b:a", "192k"] if info.has_audio else ["-an"]
     with tempfile.TemporaryFile() as enc_log:
         encoder = subprocess.Popen(
             ["ffmpeg", "-y", "-v", "error",
@@ -43,11 +50,12 @@ def render_clip(source: Path, info: VideoInfo, crop_path: list[list[float]],
              "-r", f"{fps:.3f}", "-i", "-",
              "-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(source),
              "-map", "0:v", *audio_map,
-             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+             "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",
              "-shortest", "-movflags", "+faststart", str(part)],
             stdin=subprocess.PIPE, stderr=enc_log,
         )
         assert decoder.stdout is not None and encoder.stdin is not None
+        aborted = False
         try:
             index = 0
             while True:
@@ -59,15 +67,20 @@ def render_clip(source: Path, info: VideoInfo, crop_path: list[list[float]],
                 x0 = int(round(cx * width - crop_w / 2))
                 x0 = max(0, min(width - crop_w, x0))
                 window = frame[:, x0:x0 + crop_w]
-                interp = cv2.INTER_AREA if height >= config.OUT_HEIGHT else cv2.INTER_CUBIC
                 out = cv2.resize(window, (config.OUT_WIDTH, config.OUT_HEIGHT), interpolation=interp)
                 encoder.stdin.write(out.tobytes())
                 index += 1
                 if index % 15 == 0:
+                    if cancelled():
+                        aborted = True
+                        break
                     on_progress(min(0.99, index / total_frames))
         except BrokenPipeError:
             pass
         finally:
+            if aborted:  # don't wait for a render nobody wants anymore
+                decoder.kill()
+                encoder.kill()
             decoder.stdout.close()
             decoder.wait()
             try:
@@ -75,6 +88,9 @@ def render_clip(source: Path, info: VideoInfo, crop_path: list[list[float]],
             except BrokenPipeError:
                 pass
             encoder.wait()
+        if aborted:
+            part.unlink(missing_ok=True)
+            raise ExportCancelled()
         if encoder.returncode != 0 or not part.exists():
             enc_log.seek(0)
             detail = enc_log.read().decode(errors="replace").strip().splitlines()

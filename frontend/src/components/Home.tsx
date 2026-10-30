@@ -6,8 +6,29 @@ interface Props {
   onOpen: (id: string) => void;
 }
 
+// Maximum height we ask YouTube for. A 9:16 clip only uses a slice of the width, so a sharper source
+// gives a visibly sharper clip. Keep in sync with QUALITY_CHOICES in backend/app/config.py.
+const QUALITIES = [
+  { value: 2160, label: "4K (sharpest)" },
+  { value: 1440, label: "1440p (recommended)" },
+  { value: 1080, label: "1080p" },
+  { value: 720, label: "720p (fastest)" },
+];
+const QUALITY_KEY = "clipper.quality";
+
+function savedQuality(): number {
+  try {
+    const value = Number(localStorage.getItem(QUALITY_KEY));
+    if (QUALITIES.some((q) => q.value === value)) return value;
+  } catch {
+    /* storage can be blocked, fall back to the default */
+  }
+  return 1440;
+}
+
 export function Home({ onOpen }: Props) {
   const [url, setUrl] = useState("");
+  const [quality, setQuality] = useState(savedQuality);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
@@ -26,7 +47,12 @@ export function Home({ onOpen }: Props) {
     setBusy(true);
     setError(null);
     try {
-      onOpen((await api.createFromUrl(url.trim())).id);
+      try {
+        localStorage.setItem(QUALITY_KEY, String(quality));
+      } catch {
+        /* not essential */
+      }
+      onOpen((await api.createFromUrl(url.trim(), quality)).id);
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -80,10 +106,26 @@ export function Home({ onOpen }: Props) {
           onChange={(e) => setUrl(e.target.value)}
           disabled={busy}
         />
+        <select
+          aria-label="Download quality"
+          value={quality}
+          onChange={(e) => setQuality(Number(e.target.value))}
+          disabled={busy}
+        >
+          {QUALITIES.map((q) => (
+            <option key={q.value} value={q.value}>
+              {q.label}
+            </option>
+          ))}
+        </select>
         <button className="primary" disabled={busy || !url.trim()}>
           Create clips
         </button>
       </form>
+      <p className="quality-hint muted small">
+        Vertical clips use a slice of the picture, so a sharper download gives sharper clips. Higher quality means a
+        bigger download and slower exports.
+      </p>
 
       <div className="or">or</div>
 

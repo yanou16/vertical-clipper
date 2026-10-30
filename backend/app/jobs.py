@@ -2,8 +2,12 @@
 
 Jobs run in a small thread pool. State is written to the project store, and the
 frontend simply polls GET /api/projects/{id}.
+
+Because the pool lives in memory, a server restart kills running jobs. `recover_interrupted()`
+runs at startup and puts them back in the queue, so nothing stays stuck on "analyzing".
 """
 import logging
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -13,10 +17,14 @@ from typing import Callable, Optional
 from . import config, store
 from .models import Clip, Project
 from .services import analysis, ingest, media, segmentation, tracking
-from .services.render import render_clip
+from .services.render import ExportCancelled, render_clip
 
 log = logging.getLogger("clipper.jobs")
 _pool = ThreadPoolExecutor(max_workers=config.WORKER_THREADS, thread_name_prefix="clipper")
+
+_PROCESSING = ("queued", "downloading", "preparing", "analyzing")
+_cancel_lock = threading.Lock()
+_cancelled: set[tuple[str, str]] = set()  # (project_id, clip_id) of exports the user asked to stop
 
 
 def _throttled(update: Callable[[float], None], every: float = 0.5) -> Callable[[float], None]:
@@ -58,15 +66,21 @@ def _run_pipeline(project_id: str, youtube_url: Optional[str]) -> None:
     folder = store.project_dir(project_id)
     try:
         media.require_binaries()
+        project = store.get(project_id)
         source = _find_source(folder)
 
         if youtube_url:
-            _set(project_id, status="downloading", progress=0.0, message="Downloading the video...")
-            source, title = ingest.download_youtube(
-                youtube_url, folder,
-                _throttled(lambda v: _set(project_id, progress=v)),
-            )
-            _set(project_id, title=title)
+            if source is not None and project.duration > 0:
+                # A previous attempt already downloaded and read this file (duration is only saved after
+                # that), so a retry or a restart doesn't download a multi-GB video twice.
+                log.info("Reusing the downloaded video for %s", project_id)
+            else:
+                _set(project_id, status="downloading", progress=0.0, message="Downloading the video...")
+                source, title = ingest.download_youtube(
+                    youtube_url, folder, project.quality,
+                    _throttled(lambda v: _set(project_id, progress=v)),
+                )
+                _set(project_id, title=title)
         elif source is None:
             raise media.MediaError("The uploaded file is missing.")
 
@@ -75,7 +89,8 @@ def _run_pipeline(project_id: str, youtube_url: Optional[str]) -> None:
             raise media.MediaError("This looks like a vertical video. Please use a horizontal (16:9) video.")
         if info.duration > config.MAX_VIDEO_MINUTES * 60:
             raise media.MediaError(f"This video is longer than {config.MAX_VIDEO_MINUTES} minutes.")
-        _set(project_id, duration=info.duration, width=info.width, height=info.height, fps=info.fps)
+        _set(project_id, duration=info.duration, width=info.width, height=info.height, fps=info.fps,
+             video_codec=info.codec, video_kbps=round(info.bitrate / 1000))
 
         _set(project_id, status="preparing", progress=0.0, message="Preparing the preview...")
         media.make_proxy(source, proxy_path(project_id), info.duration,
@@ -95,19 +110,33 @@ def _run_pipeline(project_id: str, youtube_url: Optional[str]) -> None:
             config.DEFAULT_TARGET_LEN, config.DEFAULT_MIN_LEN, config.DEFAULT_MAX_LEN,
         )
         store.write_json(project_id, "candidates.json", [[c.time, c.weight] for c in candidates])
+        # Only the samples that have faces: [[time, [[cx, cy, w, h], ...]], ...] (powers "click a face").
+        store.write_json(project_id, "faces.json", [
+            [round(t, 2), [[round(f.cx, 3), round(f.cy, 3), round(f.w, 3), round(f.h, 3)] for f in faces]]
+            for t, faces in zip(result.times, result.faces) if faces
+        ])
 
         def finish(p: Project) -> None:
             p.crop_path, p.tracking = crop_path, mode
+            p.has_faces = any(result.faces)
             p.clips = [Clip(id=uuid.uuid4().hex[:8], start=a, end=b, title=f"Clip {i + 1}")
                        for i, (a, b) in enumerate(spans)]
-            p.status, p.progress, p.message, p.error = "ready", 1.0, "", None
+            p.status, p.progress, p.message, p.error, p.attempts = "ready", 1.0, "", None, 0
         store.update(project_id, finish)
+    except KeyError:
+        return  # the project was deleted while it was being processed
     except media.MediaError as exc:
-        _set(project_id, status="error", error=str(exc), message="")
+        _fail(project_id, str(exc))
     except Exception:  # noqa: BLE001 - never leave a project stuck in "analyzing"
         log.exception("Pipeline failed for %s", project_id)
-        _set(project_id, status="error", message="",
-             error="Something went wrong while processing this video.")
+        _fail(project_id, "Something went wrong while processing this video.")
+
+
+def _fail(project_id: str, message: str) -> None:
+    try:
+        _set(project_id, status="error", error=message, message="")
+    except KeyError:
+        pass
 
 
 def _find_source(folder: Path) -> Optional[Path]:
@@ -116,6 +145,36 @@ def _find_source(folder: Path) -> Optional[Path]:
         return path
     matches = sorted(folder.glob("source.*"))
     return matches[0] if matches else None
+
+
+def retry(project_id: str) -> Project:
+    """Run a failed project again from the start (a finished download is reused)."""
+    def mutate(p: Project) -> None:
+        p.status, p.error, p.progress, p.message, p.attempts = "queued", None, 0.0, "Trying again...", 0
+    project = store.update(project_id, mutate)
+    submit_pipeline(project_id, project.source_url if project.source == "youtube" else None)
+    return project
+
+
+def recover_interrupted() -> None:
+    """Called once at startup: put back whatever a previous run left half-done."""
+    for project in store.list_all():
+        try:
+            if project.status in _PROCESSING:
+                if project.attempts >= config.MAX_RECOVERY_ATTEMPTS:
+                    _fail(project.id, "Processing was interrupted several times. Please try again.")
+                    continue
+                log.info("Resuming interrupted project %s (attempt %d)", project.id, project.attempts + 1)
+                _set(project.id, status="queued", message="Resuming after a restart...",
+                     attempts=project.attempts + 1)
+                submit_pipeline(project.id, project.source_url if project.source == "youtube" else None)
+            else:
+                stuck = [c.id for c in project.clips if c.export_status in ("queued", "rendering")]
+                if stuck:
+                    log.info("Re-queueing %d interrupted exports for %s", len(stuck), project.id)
+                    submit_exports(project.id, stuck)
+        except Exception:  # noqa: BLE001 - one broken project must not stop the server from starting
+            log.exception("Could not recover project %s", project.id)
 
 
 def resegment(project_id: str, target: float, min_len: float, max_len: float) -> Project:
@@ -150,6 +209,34 @@ def submit_exports(project_id: str, clip_ids: list[str]) -> None:
         _pool.submit(_run_export, project_id, clip_id)
 
 
+def cancel_exports(project_id: str, clip_ids: list[str]) -> Project:
+    """Stop exports that are waiting or rendering. Finished ones are left alone."""
+    project = store.get(project_id)
+    active = [c.id for c in project.clips if c.id in clip_ids and c.export_status in ("queued", "rendering")]
+    with _cancel_lock:
+        _cancelled.update((project_id, cid) for cid in active)
+
+    def mutate(p: Project) -> None:
+        for clip in p.clips:
+            # A waiting export just goes back to idle; a rendering one notices the flag and stops itself.
+            if clip.id in active and clip.export_status == "queued":
+                clip.export_status, clip.export_progress = "idle", 0.0
+    return store.update(project_id, mutate)
+
+
+def _is_cancelled(key: tuple[str, str]) -> bool:
+    with _cancel_lock:
+        return key in _cancelled
+
+
+def _take_cancel(key: tuple[str, str]) -> bool:
+    with _cancel_lock:
+        if key in _cancelled:
+            _cancelled.discard(key)
+            return True
+        return False
+
+
 def _set_clip(project_id: str, clip_id: str, **fields) -> None:
     def mutate(p: Project) -> None:
         for clip in p.clips:
@@ -160,22 +247,34 @@ def _set_clip(project_id: str, clip_id: str, **fields) -> None:
 
 
 def _run_export(project_id: str, clip_id: str) -> None:
+    key = (project_id, clip_id)
     try:
+        if _take_cancel(key):  # cancelled while still waiting in the queue
+            return
         project = store.get(project_id)
         clip = next((c for c in project.clips if c.id == clip_id), None)
         if clip is None:  # deleted while queued
             return
-        start, end = clip.start, clip.end
+        start, end, revision = clip.start, clip.end, clip.revision
+        path = tracking.effective_path(project.crop_path, clip.keyframes, project.width, project.height)
         _set_clip(project_id, clip_id, export_status="rendering", export_progress=0.0)
         info = media.VideoInfo(project.duration, project.width, project.height, project.fps,
                                has_audio=media.probe(source_path(project_id)).has_audio)
         render_clip(
-            source_path(project_id), info, project.crop_path, start, end,
+            source_path(project_id), info, path, start, end,
             export_path(project_id, clip_id),
             _throttled(lambda v: _set_clip(project_id, clip_id, export_progress=v)),
+            cancelled=lambda: _is_cancelled(key),
         )
-        _set_clip(project_id, clip_id, export_status="done", export_progress=1.0,
-                  exported_range=(start, end))
+        # `revision` is the one we rendered; if the clip was edited meanwhile it no longer matches
+        # and the UI offers to export again.
+        _set_clip(project_id, clip_id, export_status="done", export_progress=1.0, exported_revision=revision)
+    except ExportCancelled:
+        _take_cancel(key)
+        try:
+            _set_clip(project_id, clip_id, export_status="idle", export_progress=0.0)
+        except KeyError:
+            pass
     except media.MediaError as exc:
         _set_clip(project_id, clip_id, export_status="error", export_error=str(exc))
     except KeyError:

@@ -114,6 +114,20 @@ def _compress(points: list[tuple[float, float]]) -> list[list[float]]:
     return [[round(t, 3), round(c, 4)] for t, c in kept]
 
 
+def effective_path(auto_path: list[list[float]], keyframes, src_width: int, src_height: int
+                   ) -> list[list[float]]:
+    """The camera path to use for one clip: the user's keyframes if there are any, else the automatic path.
+
+    Between keyframes the camera glides in a straight line; before the first and after the last it holds
+    still. A single keyframe therefore locks the framing for the whole clip.
+    """
+    if not keyframes:
+        return auto_path
+    half = crop_half_width(src_width, src_height)
+    points = sorted((float(t), min(max(float(c), half), 1 - half)) for t, c in keyframes)
+    return [[t, c] for t, c in points]
+
+
 def centers_at(path: list[list[float]], times: np.ndarray) -> np.ndarray:
     """Camera centre (0..1) for each timestamp."""
     arr = np.asarray(path, dtype=float)

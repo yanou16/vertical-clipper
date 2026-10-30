@@ -20,6 +20,10 @@ FACE_SCORE_THRESHOLD = 0.6
 class Face:
     cx: float  # centre x, 0..1 of frame width
     area: float  # 0..1 of frame area
+    # Box, only needed to draw "click a face" targets in the editor. All 0..1 of the frame.
+    cy: float = 0.5
+    w: float = 0.0
+    h: float = 0.0
 
 
 @dataclass
@@ -84,7 +88,10 @@ def analyze(proxy: Path, src_width: int, src_height: int, duration: float,
             _, found = detector.detect(frame)
             for row in (found if found is not None else []):
                 x, y, w, h = row[:4]
-                faces.append(Face(cx=float((x + w / 2) / width), area=float(w * h / (width * height))))
+                faces.append(Face(
+                    cx=float((x + w / 2) / width), area=float(w * h / (width * height)),
+                    cy=float((y + h / 2) / height), w=float(w / width), h=float(h / height),
+                ))
         result.times.append(t)
         result.faces.append(faces)
 

@@ -9,3 +9,6 @@ frontend/dist/
 # Runtime data (uploaded + exported videos)
 data/
 .DS_Store
+
+# Local learning notes - never commit
+docs/debriefs/

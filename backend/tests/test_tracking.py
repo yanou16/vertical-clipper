@@ -1,7 +1,7 @@
 import numpy as np
 
 from app.services.analysis import Analysis, Face
-from app.services.tracking import build_crop_path, centers_at, crop_half_width
+from app.services.tracking import build_crop_path, centers_at, crop_half_width, effective_path
 
 
 def _analysis(xs, cuts=(), fps=4.0):
@@ -52,3 +52,27 @@ def test_gaps_without_a_face_hold_the_last_position():
     path, _ = build_crop_path(_analysis(xs), 7.5, 1920, 1080)
     centers = centers_at(path, np.linspace(0, 7, 30))
     assert np.allclose(centers, centers[0], atol=0.01)
+
+
+# ---- manual framing -------------------------------------------------------------
+
+def test_without_keyframes_the_automatic_path_is_used():
+    auto = [[0.0, 0.4], [5.0, 0.6]]
+    assert effective_path(auto, [], 1920, 1080) is auto
+
+
+def test_keyframes_replace_the_automatic_path_and_are_sorted():
+    path = effective_path([[0.0, 0.5]], [(8.0, 0.7), (2.0, 0.3)], 1920, 1080)
+    assert path == [[2.0, 0.3], [8.0, 0.7]]
+
+
+def test_a_single_keyframe_locks_the_framing_for_the_whole_clip():
+    path = effective_path([[0.0, 0.5]], [(4.0, 0.3)], 1920, 1080)
+    centers = centers_at(path, np.array([0.0, 4.0, 100.0]))
+    assert np.allclose(centers, 0.3)
+
+
+def test_keyframes_cannot_push_the_window_out_of_the_frame():
+    half = crop_half_width(1920, 1080)
+    path = effective_path([], [(1.0, 0.0), (2.0, 1.0)], 1920, 1080)
+    assert path[0][1] == half and path[1][1] == 1 - half

@@ -186,3 +186,29 @@ main.center-card.muted { background: none; box-shadow: none; }
 @media (prefers-reduced-motion: no-preference) {
   button, .button, .dropzone, input { transition: box-shadow 0.15s, background 0.15s, color 0.15s, border-color 0.15s; }
 }
+
+/* ---------- download quality (in the link pill) ---------- */
+.url-pill select { background: transparent; box-shadow: none; padding: 8px 6px; font-size: 14px; color: var(--muted); border-radius: 8px; }
+.url-pill select:hover:not(:disabled) { color: var(--ink); background: var(--paper-2); box-shadow: none; }
+.quality-hint { max-width: 56ch; margin: -6px 0 0; text-wrap: pretty; }
+
+/* ---------- source info + sharpness note ---------- */
+.source-info { margin-left: auto; font-size: 13px; white-space: nowrap; }
+.sharpness-hint { margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; background: var(--accent-soft); color: var(--ink-2); text-wrap: pretty; }
+
+/* ---------- manual framing ---------- */
+.crop-window { pointer-events: auto; cursor: grab; touch-action: none; }
+.crop-window:active { cursor: grabbing; }
+.face-box { position: absolute; z-index: 2; padding: 0; background: transparent; border-radius: 10px; cursor: pointer;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgb(15 15 14 / 0.35); }
+.face-box:hover:not(:disabled) { background: rgb(252 76 2 / 0.12); box-shadow: 0 0 0 3px var(--accent), 0 0 0 5px #fff; }
+.keyframe-marker { position: absolute; top: -6px; width: 10px; height: 10px; margin-left: -5px; background: var(--ink);
+  transform: rotate(45deg); border-radius: 2px; pointer-events: none; z-index: 3; box-shadow: 0 0 0 2px var(--paper); }
+
+/* ---------- selecting clips ---------- */
+input[type="checkbox"] { appearance: auto; width: 16px; height: 16px; min-width: 16px; padding: 0; margin: 0; border-radius: 4px;
+  box-shadow: none; accent-color: var(--accent); cursor: pointer; }
+.list-tools { padding: 0 2px; }
+.select-all { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.export-row .ghost { margin-left: auto; padding: 2px 8px; font-size: 13px; }
+@media (max-width: 640px) { .source-info { display: none; } }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Project, ProjectStatus } from "../types";
 
 const STEPS: { status: ProjectStatus; label: string }[] = [
@@ -6,15 +7,40 @@ const STEPS: { status: ProjectStatus; label: string }[] = [
   { status: "analyzing", label: "Finding moments and tracking faces" },
 ];
 
-export function Processing({ project, onBack }: { project: Project; onBack: () => void }) {
+interface Props {
+  project: Project;
+  onBack: () => void;
+  onRetry: () => Promise<void>;
+}
+
+export function Processing({ project, onBack, onRetry }: Props) {
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+
+  async function retry() {
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      await onRetry();
+    } catch (e) {
+      setRetryError((e as Error).message);
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   if (project.status === "error") {
     return (
       <main className="center-card card">
         <h2>We couldn't process this video</h2>
         <p className="error">{project.error}</p>
-        <button className="primary" onClick={onBack}>
-          Try another video
-        </button>
+        {retryError && <p className="error small">{retryError}</p>}
+        <div className="row">
+          <button className="primary" onClick={retry} disabled={retrying}>
+            {retrying ? "Starting…" : "Try again"}
+          </button>
+          <button onClick={onBack}>Try another video</button>
+        </div>
       </main>
     );
   }
@@ -23,7 +49,9 @@ export function Processing({ project, onBack }: { project: Project; onBack: () =
   return (
     <main className="center-card card">
       <h2>{project.title === "Downloading..." ? "Working on your video" : project.title}</h2>
-      <p className="muted">This can take a few minutes for long videos. You can leave this page open.</p>
+      <p className="muted">
+        {project.message || "This can take a few minutes for long videos."} You can leave this page open.
+      </p>
       <ol className="steps">
         {STEPS.map((step, i) => (
           <li key={step.status} className={i < current ? "done" : i === current ? "active" : ""}>

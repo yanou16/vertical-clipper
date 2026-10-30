@@ -15,6 +15,8 @@ COPY backend/requirements.txt backend/requirements.txt
 RUN pip install --no-cache-dir --default-timeout=120 --retries=5 -r backend/requirements.txt
 COPY backend/ backend/
 COPY --from=web /web/dist frontend/dist
+# yt-dlp needs a JavaScript runtime to solve YouTube's puzzle; reuse the Node binary from the build stage.
+COPY --from=web /usr/local/bin/node /usr/local/bin/node
 
 RUN useradd --create-home clipper && mkdir -p /app/data && chown clipper /app/data
 USER clipper

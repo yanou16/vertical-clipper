@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { sameRange } from "../lib/range";
 import { clamp } from "../lib/time";
-import type { Project, Range } from "../types";
+import type { FaceSample, Project, Range } from "../types";
 import { ClipList } from "./ClipList";
 import { PreviewPlayer } from "./PreviewPlayer";
 import { Timeline, type Focus } from "./Timeline";
@@ -16,6 +16,17 @@ interface Props {
 }
 
 const SPLIT_LENGTHS = [15, 30, 45, 60];
+const OUT_HEIGHT = 1920; // exported clips are 1080x1920
+
+const CODEC_NAMES: Record<string, string> = { h264: "H.264", hevc: "HEVC", vp9: "VP9", av1: "AV1", vp8: "VP8" };
+
+/** "1920×1080 · AV1 · 0.5 Mb/s": what the original video really is (the preview is a lighter copy). */
+function describeSource(project: Project): string {
+  const parts = [`${project.width}×${project.height}`];
+  if (project.video_codec) parts.push(CODEC_NAMES[project.video_codec] ?? project.video_codec.toUpperCase());
+  if (project.video_kbps > 0) parts.push(`${(project.video_kbps / 1000).toFixed(1)} Mb/s`);
+  return parts.join(" · ");
+}
 
 export function Editor({ project, setProject, refresh, onBack }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -23,10 +34,14 @@ export function Editor({ project, setProject, refresh, onBack }: Props) {
   const [live, setLive] = useState<Range | null>(null); // range while a handle is being dragged
   const [toast, setToast] = useState<string | null>(null);
   const [splitTarget, setSplitTarget] = useState(30);
+  const [faces, setFaces] = useState<FaceSample[]>([]);
 
   const clip = project.clips.find((c) => c.id === selectedId) ?? project.clips[0] ?? null;
   const range: Range | null = live ?? (clip ? { start: clip.start, end: clip.end } : null);
   const clipsForList = project.clips.map((c) => (live && c.id === clip?.id ? { ...c, ...live } : c));
+
+  // A 9:16 clip only uses a slice of the width, so a short source gets enlarged. Say so plainly.
+  const enlargement = OUT_HEIGHT / project.height;
 
   const seek = (t: number) => {
     if (videoRef.current) videoRef.current.currentTime = clamp(t, 0, project.duration);
@@ -40,6 +55,22 @@ export function Editor({ project, setProject, refresh, onBack }: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clip?.id]);
+
+  // Faces seen during this clip, for the "click a face to follow it" boxes.
+  useEffect(() => {
+    setFaces([]);
+    if (!clip || !project.has_faces) return;
+    let stale = false;
+    api
+      .getFaces(project.id, clip.start, clip.end)
+      .then((samples) => !stale && setFaces(samples))
+      .catch(() => {
+        /* face boxes are a bonus, the editor works without them */
+      });
+    return () => {
+      stale = true;
+    };
+  }, [project.id, project.has_faces, clip?.id, clip?.start, clip?.end]);
 
   async function run(promise: Promise<Project>): Promise<Project | null> {
     try {
@@ -61,6 +92,22 @@ export function Editor({ project, setProject, refresh, onBack }: Props) {
     setProject({ ...project, clips: project.clips.map((c) => (c.id === clip.id ? { ...c, ...r } : c)) });
     seek(focus === "end" ? r.end - 0.5 : r.start);
     run(api.patchClip(project.id, clip.id, r));
+  }
+
+  // --- manual framing ---------------------------------------------------------------------------
+  function saveFraming(keyframes: [number, number][]) {
+    if (!clip) return;
+    setProject({ ...project, clips: project.clips.map((c) => (c.id === clip.id ? { ...c, keyframes } : c)) });
+    run(api.patchClip(project.id, clip.id, { keyframes }));
+  }
+
+  function addKeyframe(t: number, cx: number) {
+    if (!clip) return;
+    const time = Math.round(t * 100) / 100;
+    const centre = Math.round(cx * 10000) / 10000;
+    // A new point replaces any point placed within 0.3 s, so a re-drag corrects instead of piling up.
+    const kept = clip.keyframes.filter(([kt]) => Math.abs(kt - time) > 0.3);
+    saveFraming([...kept, [time, centre] as [number, number]].sort((a, b) => a[0] - b[0]));
   }
 
   async function addClip() {
@@ -91,7 +138,19 @@ export function Editor({ project, setProject, refresh, onBack }: Props) {
           ← New video
         </button>
         <h1 title={project.title}>{project.title}</h1>
+        <span className="source-info muted mono" title="The original video this project was made from">
+          {describeSource(project)}
+        </span>
       </div>
+
+      {enlargement > 1.15 && (
+        <p className="sharpness-hint small">
+          Sharpness: this source is {project.height}p, so vertical clips are enlarged ×{enlargement.toFixed(1)}.{" "}
+          {project.source === "youtube"
+            ? "Create the project again with a higher quality (1440p or 4K) for sharper clips."
+            : "A higher-resolution file gives sharper clips."}
+        </p>
+      )}
 
       {toast && (
         <p className="error banner" role="alert">
@@ -103,11 +162,20 @@ export function Editor({ project, setProject, refresh, onBack }: Props) {
         <section className="stage">
           {clip && range ? (
             <>
-              <PreviewPlayer project={project} range={range} videoRef={videoRef} />
+              <PreviewPlayer
+                project={project}
+                clip={clip}
+                range={range}
+                faces={faces}
+                videoRef={videoRef}
+                onKeyframe={addKeyframe}
+                onResetFraming={() => saveFraming([])}
+              />
               <Timeline
                 duration={project.duration}
                 range={range}
                 others={project.clips.filter((c) => c.id !== clip.id)}
+                keyframes={clip.keyframes}
                 videoRef={videoRef}
                 onLive={setLive}
                 onCommit={commit}
@@ -141,6 +209,7 @@ export function Editor({ project, setProject, refresh, onBack }: Props) {
           onRename={(id, title) => run(api.patchClip(project.id, id, { title }))}
           onDelete={removeClip}
           onExport={(ids) => run(api.startExports(project.id, ids))}
+          onCancel={(ids) => run(api.cancelExports(project.id, ids))}
         />
       </div>
     </div>

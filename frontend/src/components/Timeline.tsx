@@ -10,13 +10,14 @@ interface Props {
   duration: number;
   range: Range;
   others: Clip[]; // the other clips, drawn faintly for context
+  keyframes: [number, number][]; // manual framing points of this clip, shown as small markers
   videoRef: RefObject<HTMLVideoElement | null>;
   onLive: (r: Range) => void; // while dragging
   onCommit: (r: Range, focus: Focus) => void; // when released
 }
 
 /** Zoomed timeline around the selected clip, with draggable start/end handles. */
-export function Timeline({ duration, range, others, videoRef, onLive, onCommit }: Props) {
+export function Timeline({ duration, range, others, keyframes, videoRef, onLive, onCommit }: Props) {
   const trackRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ kind: DragKind; x: number; origin: Range; view: View; latest: Range } | null>(null);
@@ -104,6 +105,11 @@ export function Timeline({ duration, range, others, videoRef, onLive, onCommit }
         />
         <Handle side="start" at={pct(range.start)} value={range.start} begin={begin} move={move} finish={finish} onKey={onKey} />
         <Handle side="end" at={pct(range.end)} value={range.end} begin={begin} move={move} finish={finish} onKey={onKey} />
+        {keyframes
+          .filter(([t]) => t >= view.lo && t <= view.hi)
+          .map(([t]) => (
+            <div key={t} className="keyframe-marker" style={{ left: `${pct(t)}%` }} title="Manual framing point" />
+          ))}
         <div className="playhead" ref={playheadRef} />
       </div>
       <div className="timeline-labels mono">

@@ -6,10 +6,14 @@ export interface Clip {
   start: number;
   end: number;
   title: string;
+  /** Manual framing points [time_s, centre_x 0..1]. Empty = automatic camera. */
+  keyframes: [number, number][];
+  /** Bumped by the server whenever the range or framing changes. */
+  revision: number;
   export_status: ExportStatus;
   export_progress: number;
   export_error: string | null;
-  exported_range: [number, number] | null;
+  exported_revision: number | null;
 }
 
 export interface Project {
@@ -17,6 +21,7 @@ export interface Project {
   title: string;
   source: "youtube" | "upload";
   source_url: string | null;
+  quality: number;
   status: ProjectStatus;
   progress: number;
   message: string;
@@ -25,10 +30,13 @@ export interface Project {
   width: number;
   height: number;
   fps: number;
+  video_codec: string;
+  video_kbps: number;
   clips: Clip[];
-  /** Camera path for the 9:16 window: [time_s, centre_x (0..1)] */
+  /** Automatic camera path for the 9:16 window: [time_s, centre_x (0..1)] */
   crop_path: [number, number][];
   tracking: "faces" | "center";
+  has_faces: boolean;
   created_at: number;
 }
 
@@ -37,11 +45,21 @@ export interface Range {
   end: number;
 }
 
-/** A finished export that still matches the clip's current boundaries. */
+/** A face seen in the video, as fractions (0..1) of the frame. */
+export interface FaceBox {
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+}
+
+export interface FaceSample {
+  t: number;
+  faces: FaceBox[];
+}
+
+/** A finished export that reflects the clip as it is now (same range and same framing). */
 export const isExportCurrent = (c: Clip): boolean =>
-  c.export_status === "done" &&
-  c.exported_range !== null &&
-  c.exported_range[0] === c.start &&
-  c.exported_range[1] === c.end;
+  c.export_status === "done" && c.exported_revision === c.revision;
 
 export const isBusy = (c: Clip): boolean => c.export_status === "queued" || c.export_status === "rendering";
