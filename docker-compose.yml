@@ -1,0 +1,8 @@
+services:
+  clipper:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"   # reachable from this computer only
+    volumes:
+      - ./data:/app/data        # keep projects and exports between restarts
+    restart: unless-stopped
